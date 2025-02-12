@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_oauth2/CallbackPage.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'package:url_launcher/url_launcher_string.dart'; // Import url_launcher
+import 'dart:html' as html; // Import for web-specific functionality
 
 void main() {
   runApp(MyApp());
@@ -13,6 +15,9 @@ class MyApp extends StatelessWidget {
     return MaterialApp(
       title: 'OAuth2 Login',
       home: LoginPage(),
+      routes: {
+        '/callback': (context) => CallbackPage(),
+      },
     );
   }
 }
@@ -34,8 +39,8 @@ class _LoginPageState extends State<LoginPage> {
   final String _authServerBaseUrl =
       'http://localhost:9000'; // Base URL of your auth server
   final String _redirectUri =
-      'http://localhost:61617/callback'; // Your redirect URI (e.g., your-app-scheme://callback)
-  final String _scopes = 'oidc'; // Requested scopes
+      'http://localhost:8080/callback'; // Your redirect URI (e.g., your-app-scheme://callback)
+  final String _scopes = 'openid'; // Requested scopes
 
   Future<void> _login() async {
     setState(() {
@@ -45,20 +50,38 @@ class _LoginPageState extends State<LoginPage> {
     // 1. Construct Authorization URL
     _authUrl =
         '$_authServerBaseUrl/oauth2/authorize?response_type=code&client_id=$_clientId&redirect_uri=$_redirectUri&scope=$_scopes&code_challenge=yOsDH-qh5AvOEgJ4_opxfc-nFE9TKj_CD4XAOl7_Wq4&code_challenge_method=S256';
-    print('Authorization URL1  : $_authUrl');
+    print('Authorization URL  : $_authUrl');
     // 2. Launch Authorization URL in Browser
-    if (await canLaunchUrlString(_authUrl)) {
-      await launchUrlString(_authUrl,
-          mode: LaunchMode.externalApplication); // Use externalApplication
-    } else {
-      setState(() {
-        _isLoading = false;
-      });
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Could not launch $_authUrl')),
-      );
-      return;
-    }
+    // if (await canLaunchUrlString(_authUrl)) {
+    //   await launchUrlString(_authUrl,
+    //       mode: LaunchMode.externalApplication); // Use externalApplication
+    // } else {
+    //   setState(() {
+    //     _isLoading = false;
+    //   });
+    //   ScaffoldMessenger.of(context).showSnackBar(
+    //     SnackBar(content: Text('Could not launch $_authUrl')),
+    //   );
+    //   return;
+    // }
+
+    html.window.open(_authUrl, '_self'); // Or '_blank' for a new window
+
+    // 3. Listen for messages from your web server (callback page)
+    html.window.onMessage.listen((html.MessageEvent event) {
+      print(event.origin);
+      if (event.origin == 'http://localhost:8080/') {
+        // Check the origin! VERY IMPORTANT
+        String authorizationCode = event.data; // The authorization code
+        print(authorizationCode);
+        _exchangeCodeForToken(authorizationCode);
+      } else {
+        print(
+            'Message from unexpected origin: ${event.origin}'); // Security check!
+      }
+    });
+
+    print("Reached the end");
 
     // 3. Handle Callback (This part is tricky and platform-dependent.  See explanation below)
     // You'll need a way to intercept the redirect.  This usually involves:
